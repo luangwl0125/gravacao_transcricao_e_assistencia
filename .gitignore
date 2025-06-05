@@ -1,0 +1,10 @@
+# Ignorar a virtualenv inteira
+.venv/
+
+# Ignorar pastas e arquivos temporários que não precisam versionar
+PROMPTS/
+arquivos/
+# (caso não queira versionar as transcrições históricas, etc.)
+
+# Outros arquivos ou executáveis muito grandes
+ffmpeg.exe

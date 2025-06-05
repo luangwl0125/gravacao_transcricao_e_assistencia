@@ -1,0 +1,12 @@
+openai>=1.0.0
+python-dotenv
+streamlit==1.33.0
+streamlit_webrtc
+moviepy>=2.1.2
+pydub
+docx2txt==0.8
+openai-whisper
+torch
+numpy
+scipy
+

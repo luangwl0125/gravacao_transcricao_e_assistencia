@@ -1,0 +1,41 @@
+Visão Geral do Painel
+
+Este painel, agora chamado Assistente de Organização, é uma ferramenta intuitiva e robusta projetada para profissionais e estudantes de diversas áreas (psicologia, negócios, educação, direito, saúde, entre outros). Seu objetivo é transformar conteúdo audiovisual (áudio ao vivo, arquivos de áudio, vídeos e textos) em informações estruturadas, facilitando o registro, análise e tomada de decisão.
+
+Funcionalidades Principais
+
+Gravação em Tempo Real: Capture áudio diretamente do microfone com transcrição automática a cada 10 segundos.
+
+Upload de Vídeo: Importe vídeos em diversos formatos (MP4, MOV, AVI, MKV, WEBM); o painel extrai o áudio e converte para WAV para transcrição.
+
+Upload de Áudio: Aceita múltiplos formatos de áudio (MP3, WAV, M4A, OPUS) e converte para WAV para processamento via Whisper.
+
+Suporte a Texto: Envie arquivos de texto (TXT, DOCX) para análise sem necessidade de gravação prévia.
+
+Análise Estruturada: Organiza automaticamente o conteúdo em seções como Identificação do Evento, Objetivo, Principais Pontos, Ações, Observações e Conclusões.
+
+Salvamento Automático: Armazena transcrições e análises em uma pasta dedicada (TRANSCRICOES), com nomenclatura baseada em data/hora.
+
+Utilidades para o Usuário
+
+Profissionais: Facilita a criação de relatórios, atas de reunião, resumos de aulas, entrevistas e laudos, economizando tempo e garantindo padronização.
+
+Estudantes: Auxilia na revisão de aulas gravadas, organização de notas e preparação de estudos.
+
+Equipes e Grupos: Permite compartilhar insights estruturados de forma rápida, melhorando a colaboração e o registro de decisões.
+
+Compromisso com a Privacidade
+
+Processamento Local: Todo o processamento de áudio, vídeo e texto ocorre localmente, sem envio de dados para servidores externos.
+
+Armazenamento Seguro: As pastas temp e TRANSCRICOES são gerenciadas localmente com permissões de sistema, garantindo que só você tenha acesso aos arquivos.
+
+Coleta Mínima de Dados: Apenas o conteúdo fornecido (áudio, vídeo ou texto) é processado e salvo; não são coletadas informações pessoais além do necessário.
+
+Linguagem Acessível
+
+O painel foi desenvolvido com interface em abas para cada tipo de insumo (Microfone, Vídeo, Áudio e Texto). Instruções claras orientam o usuário em cada etapa: basta clicar na aba correspondente e fornecer o insumo (falar, fazer upload de arquivo ou enviar texto). Os resultados aparecem instantaneamente, em formato organizado e fácil de entender.
+
+Conclusão
+
+O Assistente de Organização é a solução ideal para quem busca otimizar a captura, transcrição e documentação de informações em eventos gravados. Com segurança, praticidade e padronização, ele transforma horas de gravações em relatórios claros, prontos para uso profissional e acadêmico.
