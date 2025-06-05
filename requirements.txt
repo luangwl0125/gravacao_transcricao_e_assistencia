@@ -1,12 +1,30 @@
- openai>=1.0.0
- python-dotenv
- streamlit==1.33.0
- streamlit-webrtc>=0.62.4
- moviepy>=2.1.2
- pydub>=0.25.1
- docx2txt==0.8
--openai-whisper
-+git+https://github.com/openai/whisper.git@main#egg=openai-whisper
- torch>=2.0.1
- numpy>=1.24.0
- scipy>=1.10.0
+# ---------------------------------------------------
+# Dependências mínimas para rodar o seu script
+# ---------------------------------------------------
+
+# Cliente OpenAI (para chamadas à API Whisper e ChatGPT)
+openai>=1.0.0
+
+# Carrega variáveis de ambiente (.env)
+python-dotenv>=0.21.1
+
+# Streamlit e WebRTC
+streamlit==1.33.0
+streamlit-webrtc>=0.62.4
+
+# Manipulação de vídeo e extração de áudio
+moviepy>=2.1.2
+
+# Manipulação de formatos de áudio (conversão para WAV)
+pydub>=0.25.1
+
+# Leitura de .docx
+docx2txt==0.8
+
+# Instalando Whisper diretamente do repositório oficial (contorna erro de build do PyPI)
+git+https://github.com/openai/whisper.git@main#egg=openai-whisper
+
+# Torch / NumPy / SciPy (requeridos pelo Whisper e outras rotinas)
+torch>=2.0.1
+numpy>=1.24.0
+scipy>=1.10.0
