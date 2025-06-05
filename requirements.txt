@@ -1,12 +1,12 @@
-openai>=1.0.0
-python-dotenv
-streamlit==1.33.0
-streamlit_webrtc
-moviepy>=2.1.2
-pydub
-docx2txt==0.8
-openai-whisper
-torch
-numpy
-scipy
-
+ openai>=1.0.0
+ python-dotenv
+ streamlit==1.33.0
+ streamlit-webrtc>=0.62.4
+ moviepy>=2.1.2
+ pydub>=0.25.1
+ docx2txt==0.8
+-openai-whisper
++git+https://github.com/openai/whisper.git@main#egg=openai-whisper
+ torch>=2.0.1
+ numpy>=1.24.0
+ scipy>=1.10.0
