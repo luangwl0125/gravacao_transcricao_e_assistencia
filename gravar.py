@@ -15,7 +15,6 @@ import openai
 import pydub
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from dotenv import load_dotenv, find_dotenv
-import whisper
 from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
