@@ -1,3 +1,6 @@
+import sys, audioop
+sys.modules['pyaudioop'] = audioop
+
 from pathlib import Path
 from datetime import datetime
 import time

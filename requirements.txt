@@ -1,11 +1,10 @@
 openai>=1.0.0
 python-dotenv>=0.21.1
 streamlit==1.33.0
-streamlit-webrtc==0.62.4
-moviepy>=2.2.1
+streamlit-webrtc>=0.62.4
+moviepy>=2.1.2
 pydub>=0.25.1
 docx2txt==0.8
-openai-whisper>=20240930
-torch>=2.0.1
-numpy>=1.23.0
-scipy>=1.9.0
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
