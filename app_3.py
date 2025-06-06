@@ -117,6 +117,37 @@ def transcreve_tab_mic():
         media_stream_constraints={'video': False, 'audio': True},
         rtc_configuration={"iceServers": [{'urls': ['stun:stun.l.google.com:19302']}]} )
 
+def transcreve_tab_mic():
+    for key, default in {
+        "transcricao_mic": "",
+        "analise_mic": "",
+        "gravando_audio": False,
+        "audio_completo": pydub.AudioSegment.empty()
+    }.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
+
+    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
+    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button('🔴 Gravar Áudio' if not st.session_state['gravando_audio'] else '⏹️ Parar Gravação'):
+            st.session_state['gravando_audio'] = not st.session_state['gravando_audio']
+            if not st.session_state['gravando_audio'] and len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
+
+    ctx = webrtc_streamer(
+        key='mic', mode=WebRtcMode.SENDONLY,
+        audio_receiver_size=1024,
+        media_stream_constraints={'video': False, 'audio': True},
+        rtc_configuration={"iceServers": [{'urls': ['stun:stun.l.google.com:19302']}]} )
+
 @handle_openai_error
 def processa_transcricao_chatgpt(texto: str) -> str:
     resposta = client.chat.completions.create(
