@@ -78,13 +78,13 @@ def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
         return "", ""
 
 PROMPT_PSICOLOGICO = ''' ... '''
-PROMPT_JURIDICO = ''' ... '''
 PROMPT_SERVICO_SOCIAL = ''' ... '''
+PROMPT_JURIDICO = ''' ... '''
 
 PROMPTS = {
     "Psicológico": PROMPT_PSICOLOGICO,
-    "Jurídico": PROMPT_JURIDICO,
     "Serviço Social": PROMPT_SERVICO_SOCIAL
+    "Jurídico": PROMPT_JURIDICO,
 }
 
 @handle_openai_error
