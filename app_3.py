@@ -5,12 +5,10 @@ from pathlib import Path
 from datetime import datetime
 import time
 import queue
-
 import tempfile
 import os
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
-
 import openai
 import pydub
 from moviepy.video.io.VideoFileClip import VideoFileClip
@@ -19,21 +17,16 @@ from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
 
-# Diretórios
 PASTA_TEMP = Path(__file__).parent / 'temp'
 PASTA_TEMP.mkdir(exist_ok=True)
 PASTA_TRANSCRICOES = Path(__file__).parent / 'TRANSCRICOES'
 PASTA_TRANSCRICOES.mkdir(exist_ok=True)
 
-# Arquivos temporários
 ARQUIVO_AUDIO_TEMP = PASTA_TEMP / 'audio.wav'
 ARQUIVO_VIDEO_TEMP = PASTA_TEMP / 'video.mp4'
 ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.wav'
 
-# Cliente OpenAI
 client = openai.OpenAI()
-
-# Whisper local
 local_model = None
 
 def get_local_whisper():
@@ -121,18 +114,22 @@ O conteúdo da transcrição a ser analisado está delimitado entre #### TRANSCR
 #### TRANSCRIÇÃO ####
 '''
 
+PROMPT_SERVICO_SOCIAL = '''
+[...PROMPT TEXT OMITTED FOR BREVITY...]
+'''
+
 # Restante do código permanece igual até o final do main()
 # No main(), ajustar para incluir a aba de microfone:
 
 def main():
-    st.sidebar.title("🧠 Selecione o tipo de atendimento")
-    tipo_prompt = st.sidebar.radio("Tipo de Análise:", ["Psicológico", "Jurídico"])
-    prompt_escolhido = PROMPT_PSICOLOGICO if tipo_prompt == "Psicológico" else PROMPT_JURIDICO
+    st.sidebar.title("Selecione o tipo de atendimento")
+    tipo_prompt = st.sidebar.radio("Tipo de Análise:", ["Psicológico", "Social", "Jurídico"])
+    prompt_escolhido = PROMPT_PSICOLOGICO if tipo_prompt == "Psicológico" else PROMPT_JURIDICO else PROMPT_SERVICO_SOCIAL
     st.session_state['prompt_escolhido'] = prompt_escolhido
 
     st.header('🎙️ Assistente de Organização 🎙️')
     st.markdown('Gravação, Transcrição e Organização.')
-    st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
+    st.markdown('Atendimentos, Reuniões, Palestras, Aulas, Outros..')
     abas = st.tabs(['Microfone', 'Áudio', 'Vídeo', 'Texto'])
     with abas[0]:
         transcreve_tab_mic()
