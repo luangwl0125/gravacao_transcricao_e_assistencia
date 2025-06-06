@@ -1,4 +1,5 @@
-import sys, audioop
+import sys
+import audioop
 sys.modules['pyaudioop'] = audioop
 
 from pathlib import Path
@@ -7,8 +8,10 @@ import time
 import queue
 import tempfile
 import os
+
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
+
 import openai
 import pydub
 from moviepy.video.io.VideoFileClip import VideoFileClip
@@ -35,18 +38,6 @@ def get_local_whisper():
         import whisper
         local_model = whisper.load_model("base")
     return local_model
-    
-def transcreve_tab_mic():
-    st.write("Gravador de microfone ainda não implementado.")
-
-def transcreve_tab_video():
-    st.write("Uploader de vídeo e transcrição.")
-
-def transcreve_tab_audio():
-    st.write("Uploader de áudio e transcrição.")
-
-def transcreve_tab_texto():
-    st.write("Editor de texto transcrito.")
 
 # Prompts
 PROMPT_PSICOLOGICO = ''' 
@@ -127,11 +118,133 @@ O conteúdo da transcrição a ser analisado está delimitado entre #### TRANSCR
 '''
 
 PROMPT_SERVICO_SOCIAL = '''
-[...PROMPT TEXT OMITTED FOR BREVITY...]
+Você é um Assistente de Serviço Social com sólida experiência em atuação na Defensoria Pública, especializado em demandas sociais de pessoas idosas. Sua tarefa é analisar as informações a seguir, delimitadas por #### DADOS ####, e produzir uma **estrutura de avaliação social inicial**, de acordo com as normas ético‐profissionais do Serviço Social (CFESS/CFP) e com base em evidências. Siga rigorosamente as seções abaixo:
+
+1. CONTEXTO E HISTÓRICO:
+   - Identifique origem da demanda: espontânea, judicial, institucional ou encaminhamento.
+   - Registre informações sociodemográficas, composição familiar, rede de apoio, condições de moradia e renda.
+   - Contextualize aspectos culturais e ambientais relevantes à situação do assistido.
+
+2. DIAGNÓSTICO SOCIAL:
+   - Avalie fatores de risco social: vulnerabilidade, violência, abandono, carência de recursos.
+   - Verifique acesso a políticas públicas (CRAS, CREAS, Benefício de Prestação Continuada, Habitação Popular etc.).
+   - Identifique indicadores de fragilidade: saúde precária, isolamento, dependência financeira.
+
+3. RECURSOS E REDES DE APOIO:
+   - Liste serviços e programas sociais disponíveis e possíveis encaminhamentos.
+   - Avalie a presença de cuidadores formais/informais e a qualidade do suporte familiar.
+   - Análise da viabilidade de programas de proteção ao idoso ou rede de assistência.
+
+4. PLANO DE INTERVENÇÃO INICIAL:
+   - Defina ações imediatas e de médio prazo: solicitação de benefícios, inclusão em programas de assistência, articulação com órgãos municipais/estaduais.
+   - Sugira inclusão em rede de serviços (Saúde, Assistência Social, Educação, Direitos Humanos).
+   - Preveja acompanhamento continuado e frequência de visitas domiciliares (se necessário).
+
+5. ARTICULAÇÃO INTERSETORIAL:
+   - Verifique vínculo com processos judiciais e atuação conjunta com Defensoria Pública.
+   - Projete relatórios técnicos ou pareceres para subsidiar decisões judiciais e sociais.
+   - Indique possíveis parcerias com organizações não governamentais e conselhos de direitos do idoso.
+
+6. ÉTICA E DIRETRIZES PROFISSIONAIS:
+   - Confirme cumprimento de normativas do CFESS e princípios do Serviço Social: sigilo, autonomia, respeito à dignidade.
+   - Registre obtenção de Termo de Consentimento Informado, se aplicável.
+   - Ressalte a importância da escuta qualificada e do protagonismo do assistido.
+
+7. ENCAMINHAMENTOS E RECOMENDAÇÕES:
+   - Apresente encaminhamentos imediatos (CRAS, CREAS, CAPS, UBS, CAPS-Idoso, CUCA etc.).
+   - Sugira estratégias de fortalecimento de rede social: grupos de convivência, Centro Dia do Idoso.
+   - Estruture modelo de Relatório Social ou Parecer Social para a Defensoria Pública.
+
+#### DADOS ####
+{}
+#### DADOS ####
 '''
 
-# Restante do código permanece igual até o final do main()
-# No main(), ajustar para incluir a aba de microfone:
+def st_webrtc_audio_recorder():
+    webrtc_ctx = webrtc_streamer(
+        key="mic",
+        mode=WebRtcMode.SENDRECV,
+        audio_receiver_size=1024,
+        video=False,
+        async_processing=True,
+    )
+
+    audio_bytes = None
+    if webrtc_ctx.audio_receiver:
+        try:
+            frames = webrtc_ctx.audio_receiver.get_frames(timeout=1)
+            audio_bytes = b"".join([f.to_ndarray().tobytes() for f in frames])
+        except queue.Empty:
+            pass
+
+    return audio_bytes
+
+def transcreve_tab_mic():
+    st.subheader("Gravador de Microfone")
+    st.markdown("Pressione o botão abaixo para iniciar a gravação de voz.")
+
+    audio_buffer = st_webrtc_audio_recorder()
+
+    if audio_buffer:
+        # Exibe player de áudio
+        st.audio(audio_buffer, format="audio/wav")
+
+        # Salva o áudio temporariamente
+        with open(ARQUIVO_MIC_TEMP, "wb") as f:
+            f.write(audio_buffer)
+
+        # Transcreve com Whisper local
+        modelo = get_local_whisper()
+        resultado = modelo.transcribe(str(ARQUIVO_MIC_TEMP))
+
+        st.subheader("Transcrição")
+        st.text_area("Texto transcrito:", resultado["text"], height=300)
+
+def transcreve_tab_video():
+    st.subheader("Envio de Arquivo de Vídeo")
+    arquivo_video = st.file_uploader("Envie um vídeo (.mp4, .mov)", type=["mp4", "mov"])
+    if arquivo_video:
+        caminho_temp = PASTA_TEMP / arquivo_video.name
+        with open(caminho_temp, "wb") as f:
+            f.write(arquivo_video.getbuffer())
+        st.video(str(caminho_temp))
+        try:
+            resultado = get_local_whisper().transcribe(str(caminho_temp))
+            st.subheader("Transcrição")
+            st.text_area("Texto transcrito:", resultado["text"], height=300)
+        except Exception as e:
+            st.error(f"Erro ao transcrever vídeo: {e}")
+
+def transcreve_tab_audio():
+    st.subheader("Envio de Arquivo de Áudio")
+    arquivo_audio = st.file_uploader("Envie um áudio (.wav, .mp3)", type=["wav", "mp3"])
+    if arquivo_audio:
+        caminho_temp = PASTA_TEMP / arquivo_audio.name
+        with open(caminho_temp, "wb") as f:
+            f.write(arquivo_audio.getbuffer())
+        st.audio(str(caminho_temp), format="audio/wav")
+        try:
+            resultado = get_local_whisper().transcribe(str(caminho_temp))
+            st.subheader("Transcrição")
+            st.text_area("Texto transcrito:", resultado["text"], height=300)
+        except Exception as e:
+            st.error(f"Erro ao transcrever áudio: {e}")
+
+def transcreve_tab_texto():
+    st.subheader("Envio de Arquivo de Texto")
+    arquivo_texto = st.file_uploader("Envie um arquivo de texto (.txt, .docx)", type=["txt", "docx"])
+    if arquivo_texto:
+        try:
+            if arquivo_texto.type == "text/plain":
+                conteudo = arquivo_texto.read().decode("utf-8")
+            else:
+                from docx import Document
+                doc = Document(arquivo_texto)
+                conteudo = "\n".join([p.text for p in doc.paragraphs])
+            st.subheader("Conteúdo do Texto")
+            st.text_area("Texto extraído:", conteudo, height=300)
+        except Exception as e:
+            st.error(f"Erro ao ler texto: {e}")
 
 def main():
     st.sidebar.title("Selecione o tipo de atendimento")
@@ -148,6 +261,7 @@ def main():
     st.header('Assistente de Organização')
     st.markdown('Gravação, Transcrição e Organização.')
     st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
+
     abas = st.tabs(['Microfone', 'Vídeo', 'Áudio', 'Texto'])
     with abas[0]:
         transcreve_tab_mic()
