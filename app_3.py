@@ -148,6 +148,12 @@ Você é um Assistente de Serviço Social com sólida experiência em atuação 
 #### DADOS ####
 '''
 
+PROMPTS = {
+    "Psicológico": PROMPT_PSICOLOGICO,
+    "Jurídico": PROMPT_JURIDICO,
+    "Serviço Social": PROMPT_SERVICO_SOCIAL
+}
+
 def st_webrtc_audio_recorder():
     webrtc_ctx = webrtc_streamer(
         key="mic",
