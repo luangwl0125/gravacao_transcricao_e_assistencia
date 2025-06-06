@@ -274,7 +274,6 @@ def salva_transcricao(texto: str, analise: str, origem: str = ""):
 def transcreve_tab_mic():
     tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
     prompt_mic = PROMPTS[tipo_atendimento]
-    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
 
     col1, col2 = st.columns([3, 1])
     with col2:
