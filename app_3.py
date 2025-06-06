@@ -338,9 +338,9 @@ def main():
     with abas[3]:
         transcreve_tab_texto()
 
-# Escolha do tipo de atendimento
-tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
-prompt_mic = PROMPTS[tipo_atendimento]
+    # Escolha do tipo de atendimento
+    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
 
 if __name__ == '__main__':
     main()
