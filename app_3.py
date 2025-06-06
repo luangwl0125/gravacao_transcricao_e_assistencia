@@ -87,6 +87,10 @@ PROMPTS = {
     "Serviço Social": PROMPT_SERVICO_SOCIAL
 }
 
+tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
+    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
+
 @handle_openai_error
 def processa_transcricao_chatgpt(texto: str) -> str:
     """Processa o texto usando o ChatGPT para gerar uma análise estruturada"""
