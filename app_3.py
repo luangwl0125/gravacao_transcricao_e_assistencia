@@ -164,8 +164,7 @@ def st_webrtc_audio_recorder():
     webrtc_ctx = webrtc_streamer(
         key="mic",
         mode=WebRtcMode.SENDRECV,
-        audio_receiver_size=1024,
-        video=False,
+        media_stream_constraints={"audio": True, "video": False},
         async_processing=True,
     )
 
@@ -186,14 +185,10 @@ def transcreve_tab_mic():
     audio_buffer = st_webrtc_audio_recorder()
 
     if audio_buffer:
-        # Exibe player de áudio
         st.audio(audio_buffer, format="audio/wav")
-
-        # Salva o áudio temporariamente
         with open(ARQUIVO_MIC_TEMP, "wb") as f:
             f.write(audio_buffer)
 
-        # Transcreve com Whisper local
         modelo = get_local_whisper()
         resultado = modelo.transcribe(str(ARQUIVO_MIC_TEMP))
 
