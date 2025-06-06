@@ -48,21 +48,38 @@ def get_local_whisper():
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # segundos
 
-def handle_openai_error(func):
-    def wrapper(*args, **kwargs):
-        for attempt in range(MAX_RETRIES):
-            try:
-                return func(*args, **kwargs)
-            except RateLimitError as e:
-                if attempt == MAX_RETRIES - 1:  # Se for a última tentativa
-                    st.warning("OpenAI API rate limit atingido. Usando serviço local de fallback.")
-                    return use_fallback_service(*args, **kwargs)
-                else:
-                    time.sleep(RETRY_DELAY * (attempt + 1))  # Espera exponencial
-            except Exception as e:
-                st.error(f"Erro ao processar: {str(e)}")
-                return None
-    return wrapper
+@handle_openai_error
+def processa_transcricao_chatgpt(texto: str) -> str:
+    """Processa o texto com o Assistente Jurídico criado na OpenAI"""
+    ASSISTANT_ID = "asst_IIeBxLET5NSbEzVpFs4xbCrP"
+
+    # Cria uma nova thread
+    thread = client.beta.threads.create()
+
+    # Envia a transcrição como mensagem
+    client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=texto
+    )
+
+    # Executa o assistente
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=ASSISTANT_ID
+    )
+
+    # Aguarda a conclusão da execução
+    while True:
+        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        if run_status.status in ['completed', 'failed', 'cancelled']:
+            break
+        time.sleep(1)
+
+    # Recupera a resposta
+    messages = client.beta.threads.messages.list(thread_id=thread.id)
+    return messages.data[0].content[0].text.value
+
 
 def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
     """Serviço de fallback usando Whisper local"""
@@ -77,79 +94,6 @@ def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
         st.error(f"Erro no serviço de fallback: {str(e)}")
         return "", ""
 
-PROMPT_JURIDICO = ''' 
-Você é um Defensor Público Supervisor, especialista em Direito Público, com ênfase em Direitos Humanos, Direito da Pessoa Idosa e Direito Previdenciário. Sua função é analisar tecnicamente a transcrição de um atendimento jurídico prestado no Núcleo de Atendimento a Idosos da Defensoria Pública do Estado de Alagoas.
-
-Sua análise servirá de base para:
-- Orientar estagiários de Direito;
-- Elaborar documentos jurídicos e administrativos;
-- Produzir minutas de petições iniciais, manifestações, ofícios, notificações, requerimentos e recursos, conforme aplicável ao caso concreto.
-
-Utilize linguagem jurídica formal, clara e objetiva, com base nas normas vigentes e boa técnica argumentativa.
-
-**Fundamentação jurídica obrigatória (a aplicar conforme o caso):**
-
-📘 **Constituição Federal de 1988**  
-- Art. 1º, III; Art. 3º, IV; Art. 5º; Art. 6º; Art. 230
-
-📕 **Estatuto da Pessoa Idosa (Lei nº 10.741/2003)**  
-- Direitos fundamentais (arts. 2º a 21)  
-- Previdência, Assistência, Saúde, Trabalho e Justiça (arts. 22 a 46)  
-- Penalizações (arts. 49 a 108)
-
-📗 **Lei Orgânica da Assistência Social (Lei nº 8.742/1993)**  
-📘 **Lei nº 8.213/1991 – Benefícios Previdenciários**  
-📘 **Lei nº 13.146/2015 – Estatuto da Pessoa com Deficiência (quando aplicável)**  
-📘 **Código Civil** (Alimentos, Interdição, Curatela)  
-📘 **Código de Processo Civil** (Tutela Provisória, Interdição, Alimentos)
-
-**Tipos de documentos/petições que você pode elaborar a partir da análise:**
-
-- Petição Inicial (Alimentos, Curatela, Interdição, Benefício Assistencial, Tutela Antecipada)  
-- Requerimento administrativo à rede pública (CRAS, CAPS, UBS, INSS etc.)  
-- Notificação Extrajudicial  
-- Ofício Institucional para encaminhamentos ou articulações intersetoriais  
-- Declaração ou termo de comparecimento  
-- Requisição de documentos ou exames  
-- Minuta de manifestação, réplica ou apelação conforme o andamento processual
-
-**Diretrizes obrigatórias:**
-
-1. Evite inferências sem base na transcrição. Use “não informado” quando necessário.  
-2. Mantenha fidelidade aos dados, sigilo e ética profissional.  
-3. Fundamente toda recomendação com base legal adequada.  
-4. Estruture a resposta conforme os tópicos abaixo. Se alguma seção não for aplicável, indique como "não se aplica".
-
-**Seções Obrigatórias (em letras maiúsculas):**
-
-- DADOS DO ATENDIMENTO  
-- QUALIFICAÇÃO E CONTEXTO DO ASSISTIDO  
-- PROBLEMA JURÍDICO APRESENTADO  
-- ELEMENTOS DE FATO RELEVANTES  
-- ELEMENTOS DE DIREITO IDENTIFICADOS (com leis e artigos)  
-- AÇÕES REALIZADAS NO ATENDIMENTO  
-- ANÁLISE CRÍTICA DO PROCEDIMENTO  
-- ORIENTAÇÕES PARA O ESTAGIÁRIO  
-- RECOMENDAÇÕES JURÍDICAS  
-- MINUTA DE DOCUMENTO OU PETIÇÃO (se aplicável)
-
-O conteúdo da transcrição a ser analisado está delimitado entre:
-
-#### TRANSCRIÇÃO ####
-{}
-#### TRANSCRIÇÃO ####
-'''
-
-@handle_openai_error
-def processa_transcricao_chatgpt(texto: str) -> str:
-    """Processa o texto usando o ChatGPT para gerar uma análise estruturada"""
-    resposta = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "user", "content": PROMPT_JURIDICO.format(texto)}
-        ]
-    )
-    return resposta.choices[0].message.content
 
 # Converte qualquer formato suportado para WAV
 def converter_para_wav(caminho_entrada: str) -> str:
