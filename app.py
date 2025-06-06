@@ -13,17 +13,16 @@ from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 import openai
 import pydub
+import whisper  # Adicionado
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from dotenv import load_dotenv, find_dotenv
 from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
 
-# Diretório temporário
+# Diretórios
 PASTA_TEMP = Path(__file__).parent / 'temp'
 PASTA_TEMP.mkdir(exist_ok=True)
-
-# Diretório de transcrições
 PASTA_TRANSCRICOES = Path(__file__).parent / 'TRANSCRICOES'
 PASTA_TRANSCRICOES.mkdir(exist_ok=True)
 
@@ -35,67 +34,63 @@ ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.wav'
 # Cliente OpenAI
 client = openai.OpenAI()
 
-# Modelo Whisper local para fallback
+# Whisper local
 local_model = None
-
 def get_local_whisper():
     global local_model
     if local_model is None:
         local_model = whisper.load_model("base")
     return local_model
 
-# Configurações de retry
+# Retry
 MAX_RETRIES = 3
-RETRY_DELAY = 2  # segundos
+RETRY_DELAY = 2
+
+def handle_openai_error(func):
+    def wrapper(*args, **kwargs):
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except RateLimitError:
+                if attempt == MAX_RETRIES - 1:
+                    st.warning("Limite de taxa da API OpenAI atingido. Usando serviço local.")
+                    return use_fallback_service(*args, **kwargs)
+                else:
+                    time.sleep(RETRY_DELAY * (attempt + 1))
+            except Exception as e:
+                st.error(f"Erro: {str(e)}")
+                return None
+    return wrapper
 
 @handle_openai_error
 def processa_transcricao_chatgpt(texto: str) -> str:
-    """Processa o texto com o Assistente Jurídico criado na OpenAI"""
     ASSISTANT_ID = "asst_IIeBxLET5NSbEzVpFs4xbCrP"
-
-    # Cria uma nova thread
     thread = client.beta.threads.create()
-
-    # Envia a transcrição como mensagem
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=texto
-    )
-
-    # Executa o assistente
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=ASSISTANT_ID
-    )
-
-    # Aguarda a conclusão da execução
+    client.beta.threads.messages.create(thread_id=thread.id, role="user", content=texto)
+    run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
     while True:
         run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
         if run_status.status in ['completed', 'failed', 'cancelled']:
             break
         time.sleep(1)
-
-    # Recupera a resposta
     messages = client.beta.threads.messages.list(thread_id=thread.id)
-    return messages.data[0].content[0].text.value
-
+    for message in reversed(messages.data):
+        if message.role == "assistant":
+            return "\n\n".join([part.text.value for part in message.content])
+    return "Nenhuma resposta do assistente foi encontrada."
 
 def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
-    """Serviço de fallback usando Whisper local"""
     try:
-        if caminho_audio:  # Para transcrição
+        if caminho_audio:
             model = get_local_whisper()
             result = model.transcribe(caminho_audio, language="pt")
-            return result["text"], "Análise não disponível (usando serviço local)"
-        elif texto:  # Para análise
-            return texto, "Análise não disponível (usando serviço local)"
+            return result["text"], "Análise não disponível (serviço local)"
+        elif texto:
+            return texto, "Análise não disponível (serviço local)"
     except Exception as e:
-        st.error(f"Erro no serviço de fallback: {str(e)}")
+        st.error(f"Erro no fallback: {str(e)}")
         return "", ""
 
-
-# Converte qualquer formato suportado para WAV
 def converter_para_wav(caminho_entrada: str) -> str:
     audio = pydub.AudioSegment.from_file(caminho_entrada)
     fd, caminho_wav = tempfile.mkstemp(suffix=".wav", prefix="audio_")
@@ -105,19 +100,17 @@ def converter_para_wav(caminho_entrada: str) -> str:
 
 @handle_openai_error
 def transcreve_audio(caminho_audio: str, prompt: str) -> tuple[str, str]:
+    prompt = prompt or "Transcrição de atendimento jurídico"
     with open(caminho_audio, 'rb') as arquivo:
         try:
             resp = client.audio.transcriptions.create(
-                model='whisper-1',
-                language='pt',
-                response_format='text',
-                file=arquivo,
-                prompt=prompt,
+                model='whisper-1', language='pt', response_format='text',
+                file=arquivo, prompt=prompt,
             )
-            analise = processa_transcricao_chatgpt(resp)
-            return resp, analise
+            analise = processa_transcricao_chatgpt(resp.text)
+            return resp.text, analise
         except Exception as e:
-            st.warning(f"Erro na API OpenAI: {str(e)}. Usando serviço local.")
+            st.warning(f"Erro API OpenAI: {str(e)}. Usando fallback.")
             return use_fallback_service(caminho_audio, prompt)
 
 # Estado inicial para transcrição do microfone
