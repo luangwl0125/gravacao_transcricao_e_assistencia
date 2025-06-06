@@ -54,7 +54,7 @@ def handle_openai_error(func):
         for attempt in range(MAX_RETRIES):
             try:
                 return func(*args, **kwargs)
-            except RateLimitError:
+            except RateLimitError as e:
                 if attempt == MAX_RETRIES - 1:
                     st.warning("OpenAI API rate limit atingido. Usando serviço local de fallback.")
                     return use_fallback_service(*args, **kwargs)
@@ -121,6 +121,21 @@ def transcreve_audio(caminho_audio: str, prompt: str) -> tuple[str, str]:
             st.warning(f"Erro na API OpenAI: {str(e)}. Usando serviço local.")
             return use_fallback_service(caminho_audio, prompt)
 
+@st.cache_data
+def get_ice_servers():
+    return [{'urls': ['stun:stun.l.google.com:19302']}]
+
+def adiciona_chunck_de_audio(frames, chunk_audio):
+    for frame in frames:
+        seg = pydub.AudioSegment(
+            data=frame.to_ndarray().tobytes(),
+            sample_width=frame.format.bytes,
+            frame_rate=frame.sample_rate,
+            channels=len(frame.layout.channels)
+        )
+        chunk_audio += seg
+    return chunk_audio
+
 def salva_transcricao(texto: str, analise: str, origem: str = ""):
     agora = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     prefixo = f"{agora}_{origem}" if origem else agora
@@ -128,29 +143,38 @@ def salva_transcricao(texto: str, analise: str, origem: str = ""):
         f.write(texto)
     with open(PASTA_TRANSCRICOES / f"{prefixo}_analise.txt", 'w', encoding='utf-8') as f:
         f.write(analise)
-    return
 
-def _salva_audio_do_video(file_bytes):
-    with open(ARQUIVO_VIDEO_TEMP, 'wb') as f:
-        f.write(file_bytes.read())
-    clip = VideoFileClip(str(ARQUIVO_VIDEO_TEMP))
-    clip.audio.write_audiofile(str(ARQUIVO_AUDIO_TEMP), logger=None)
+def transcreve_tab_mic():
+    for key, default in {
+        "transcricao_mic": "",
+        "analise_mic": "",
+        "gravando_audio": False,
+        "audio_completo": pydub.AudioSegment.empty()
+    }.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-def transcreve_tab_video():
-    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True, key='tipo_video')
-    prompt = PROMPTS[tipo_atendimento]
-    st.text_area("Prompt Selecionado:", prompt[:800] + '...', height=300)
+    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
+    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
 
-    video = st.file_uploader('Adicione um vídeo', type=['mp4','mov','avi','mkv','webm'])
-    if video:
-        _salva_audio_do_video(video)
-        wav = converter_para_wav(str(ARQUIVO_AUDIO_TEMP))
-        texto, analise = transcreve_audio(wav, prompt)
-        st.write("**Transcrição:**")
-        st.write(texto)
-        st.write("**Análise:**")
-        st.write(analise)
-        salva_transcricao(texto, analise, f'video_{video.name}')
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button('🔴 Gravar Áudio' if not st.session_state['gravando_audio'] else '⏹️ Parar Gravação'):
+            st.session_state['gravando_audio'] = not st.session_state['gravando_audio']
+            if not st.session_state['gravando_audio'] and len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
+
+    ctx = webrtc_streamer(
+        key='mic', mode=WebRtcMode.SENDONLY,
+        audio_receiver_size=1024,
+        media_stream_constraints={'video': False, 'audio': True},
+        rtc_configuration={"iceServers": get_ice_servers()}
+    )
 
 def main():
     st.header('🎙️ Assistente de Organização 🎙️')
@@ -160,7 +184,7 @@ def main():
     with abas[0]:
         transcreve_tab_mic()
     with abas[1]:
-        transcreve_tab_video()
+        pass
     with abas[2]:
         pass
     with abas[3]:
