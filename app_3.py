@@ -86,31 +86,37 @@ PROMPTS = {
     "Serviço Social": PROMPT_SERVICO_SOCIAL
 }
 
-# Extrai áudio de vídeo
-def _salva_audio_do_video(file_bytes):
-    with open(ARQUIVO_VIDEO_TEMP, 'wb') as f:
-        f.write(file_bytes.read())
-    clip = VideoFileClip(str(ARQUIVO_VIDEO_TEMP))
-    clip.audio.write_audiofile(str(ARQUIVO_AUDIO_TEMP), logger=None)
+def transcreve_tab_mic():
+    for key, default in {
+        "transcricao_mic": "",
+        "analise_mic": "",
+        "gravando_audio": False,
+        "audio_completo": pydub.AudioSegment.empty()
+    }.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-# Aba Vídeo
-def transcreve_tab_video():
-    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True, key='tipo_video')
-    prompt = PROMPTS[tipo_atendimento]
-    video = st.file_uploader('Adicione um vídeo', type=['mp4','mov','avi','mkv','webm'])
-    if video:
-        _salva_audio_do_video(video)
-        wav = converter_para_wav(str(ARQUIVO_AUDIO_TEMP))
-        texto, analise = transcreve_audio(wav, prompt)
-        st.write("**Transcrição:**")
-        st.write(texto)
-        st.write("**Análise:**")
-        st.write(analise)
-        salva_transcricao(texto, analise, f'video_{video.name}')
+    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
+    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
 
-# (Demais funções mantidas como estão)
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button('🔴 Gravar Áudio' if not st.session_state['gravando_audio'] else '⏹️ Parar Gravação'):
+            st.session_state['gravando_audio'] = not st.session_state['gravando_audio']
+            if not st.session_state['gravando_audio'] and len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
 
-# Função principal
+    ctx = webrtc_streamer(
+        key='mic', mode=WebRtcMode.SENDONLY,
+        audio_receiver_size=1024,
+        media_stream_constraints={'video': False, 'audio': True},
+        rtc_configuration={"iceServers": [{'urls': ['stun:stun.l.google.com:19302']}]})
+
 def main():
     st.header('🎙️ Assistente de Organização 🎙️')
     st.markdown('Gravação, Transcrição e Organização.')
