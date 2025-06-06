@@ -77,15 +77,21 @@ def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
         st.error(f"Erro no serviço de fallback: {str(e)}")
         return "", ""
 
-PROMPT_PSICOLOGICO = ''' ... '''
-PROMPT_SERVICO_SOCIAL = ''' ... '''
-PROMPT_JURIDICO = ''' ... '''
+PROMPT_PSICOLOGICO = '''Aqui vai todo o texto do prompt psicológico, 
+certifique‐se de fechar as três aspas no final.'''
+PROMPT_JURIDICO = '''Aqui vai todo o texto do prompt jurídico, 
+também fechado corretamente.'''
+PROMPT_SERVICO_SOCIAL = '''Aqui vai todo o texto do prompt de serviço social,
+fechado corretamente.'''
 
 PROMPTS = {
     "Psicológico": PROMPT_PSICOLOGICO,
-    "Serviço Social": PROMPT_SERVICO_SOCIAL
     "Jurídico": PROMPT_JURIDICO,
+    "Serviço Social": PROMPT_SERVICO_SOCIAL
 }
+
+tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+prompt_mic = PROMPTS[tipo_atendimento]
 
 @handle_openai_error
 def processa_transcricao_chatgpt(texto: str) -> str:
