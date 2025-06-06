@@ -87,10 +87,6 @@ PROMPTS = {
     "Serviço Social": PROMPT_SERVICO_SOCIAL
 }
 
-# Escolha do tipo de atendimento
-tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
-prompt_mic = PROMPTS[tipo_atendimento]
-
 @handle_openai_error
 def processa_transcricao_chatgpt(texto: str) -> str:
     """Processa o texto usando o ChatGPT para gerar uma análise estruturada"""
@@ -153,6 +149,10 @@ def adiciona_chunck_de_audio(frames, chunk_audio):
         )
         chunk_audio += seg
     return chunk_audio
+
+# Escolha do tipo de atendimento
+tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+prompt_mic = PROMPTS[tipo_atendimento]
 
 def salva_transcricao(texto: str, analise: str, origem: str = ""):
     """Salva a transcrição original e a análise em arquivos separados"""
