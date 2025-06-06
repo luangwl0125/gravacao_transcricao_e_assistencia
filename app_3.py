@@ -323,10 +323,6 @@ def transcreve_tab_texto():
         except Exception as e:
             st.error(f"Erro ao processar o arquivo: {str(e)}")
 
-# Escolha do tipo de atendimento
-tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
-prompt_mic = PROMPTS[tipo_atendimento]
-
 # Função principal
 def main():
     st.header('🎙️ Assistente de Organização 🎙️')
@@ -341,6 +337,10 @@ def main():
         transcreve_tab_audio()
     with abas[3]:
         transcreve_tab_texto()
+
+# Escolha do tipo de atendimento
+tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+prompt_mic = PROMPTS[tipo_atendimento]
 
 if __name__ == '__main__':
     main()
