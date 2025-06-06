@@ -354,6 +354,59 @@ def transcreve_tab_mic():
             placeholder.write(st.session_state['transcricao_mic'])
             chunk_audio = pydub.AudioSegment.empty()
 
+def transcreve_tab_video():
+    tipo = st.radio("Tipo de Atendimento:", list(PROMPTS.keys()), horizontal=True, key="video_radio")
+    prompt = PROMPTS[tipo]
+    video = st.file_uploader("Adicione um vídeo", type=['mp4','mov','avi','mkv','webm'])
+    if video:
+        with open(ARQUIVO_VIDEO_TEMP, 'wb') as f:
+            f.write(video.read())
+        clip = VideoFileClip(str(ARQUIVO_VIDEO_TEMP))
+        clip.audio.write_audiofile(str(ARQUIVO_AUDIO_TEMP), logger=None)
+        wav = converter_para_wav(str(ARQUIVO_AUDIO_TEMP))
+        texto, analise = transcreve_audio(wav, prompt)
+        st.write("**Transcrição:**")
+        st.write(texto)
+        st.write("**Análise:**")
+        st.write(analise)
+        salva_transcricao(texto, analise, f'video_{video.name}')
+
+def transcreve_tab_audio():
+    tipo = st.radio("Tipo de Atendimento:", list(PROMPTS.keys()), horizontal=True, key="audio_radio")
+    prompt = PROMPTS[tipo]
+    audio = st.file_uploader("Adicione um áudio", type=['opus','mp4','mpeg','wav','mp3','m4a'])
+    if audio:
+        caminho = PASTA_TEMP / audio.name
+        with open(caminho, 'wb') as f:
+            f.write(audio.read())
+        wav = converter_para_wav(str(caminho))
+        texto, analise = transcreve_audio(wav, prompt)
+        st.write("**Transcrição:**")
+        st.write(texto)
+        st.write("**Análise:**")
+        st.write(analise)
+        salva_transcricao(texto, analise, f'audio_{audio.name}')
+
+def transcreve_tab_texto():
+    tipo = st.radio("Tipo de Atendimento:", list(PROMPTS.keys()), horizontal=True, key="texto_radio")
+    prompt = PROMPTS[tipo]
+    arquivo_texto = st.file_uploader("Adicione um arquivo de texto", type=['txt', 'doc', 'docx'])
+    if arquivo_texto:
+        try:
+            if arquivo_texto.type == 'text/plain':
+                texto = arquivo_texto.getvalue().decode('utf-8')
+            else:
+                import docx2txt
+                texto = docx2txt.process(arquivo_texto)
+            analise = processa_transcricao_chatgpt(texto)
+            st.write("**Texto Original:**")
+            st.write(texto)
+            st.write("**Análise:**")
+            st.write(analise)
+            salva_transcricao(texto, analise, f'texto_{arquivo_texto.name}')
+        except Exception as e:
+            st.error(f"Erro ao processar o arquivo: {str(e)}")
+            
 def main():
     st.header('🎙️ Assistente de Organização 🎙️')
     st.markdown('Gravação, Transcrição e Organização.')
