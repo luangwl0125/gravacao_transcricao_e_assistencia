@@ -35,6 +35,18 @@ def get_local_whisper():
         import whisper
         local_model = whisper.load_model("base")
     return local_model
+    
+def transcreve_tab_mic():
+    st.write("Gravador de microfone ainda não implementado.")
+
+def transcreve_tab_video():
+    st.write("Uploader de vídeo e transcrição.")
+
+def transcreve_tab_audio():
+    st.write("Uploader de áudio e transcrição.")
+
+def transcreve_tab_texto():
+    st.write("Editor de texto transcrito.")
 
 # Prompts
 PROMPT_PSICOLOGICO = ''' 
