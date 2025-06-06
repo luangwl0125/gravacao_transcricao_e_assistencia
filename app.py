@@ -77,8 +77,7 @@ def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
         st.error(f"Erro no serviço de fallback: {str(e)}")
         return "", ""
 
-# Prompt para o ChatGPT
-'''
+PROMPT_JURIDICO = ''' 
 Você é um Defensor Público Supervisor, especialista em Direito Público, com ênfase em Direitos Humanos, Direito da Pessoa Idosa e Direito Previdenciário. Sua função é analisar tecnicamente a transcrição de um atendimento jurídico prestado no Núcleo de Atendimento a Idosos da Defensoria Pública do Estado de Alagoas.
 
 Sua análise servirá de base para:
