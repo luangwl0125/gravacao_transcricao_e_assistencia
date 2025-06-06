@@ -123,20 +123,26 @@ PROMPT_SERVICO_SOCIAL = '''
 
 def main():
     st.sidebar.title("Selecione o tipo de atendimento")
-    tipo_prompt = st.sidebar.radio("Tipo de Análise:", ["Psicológico", "Social", "Jurídico"])
-    prompt_escolhido = PROMPT_PSICOLOGICO if tipo_prompt == "Psicológico" else PROMPT_JURIDICO else PROMPT_SERVICO_SOCIAL
+    tipo_prompt = st.sidebar.radio("Tipo de Análise:", ["Psicológico", "Jurídico", "Serviço Social"])
+    if tipo_prompt == "Psicológico":
+        prompt_escolhido = PROMPT_PSICOLOGICO
+    elif tipo_prompt == "Jurídico":
+        prompt_escolhido = PROMPT_JURIDICO
+    else:
+        prompt_escolhido = PROMPT_SERVICO_SOCIAL
+
     st.session_state['prompt_escolhido'] = prompt_escolhido
 
-    st.header('🎙️ Assistente de Organização 🎙️')
+    st.header('Assistente de Organização')
     st.markdown('Gravação, Transcrição e Organização.')
-    st.markdown('Atendimentos, Reuniões, Palestras, Aulas, Outros..')
-    abas = st.tabs(['Microfone', 'Áudio', 'Vídeo', 'Texto'])
+    st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
+    abas = st.tabs(['Microfone', 'Vídeo', 'Áudio', 'Texto'])
     with abas[0]:
         transcreve_tab_mic()
     with abas[1]:
-        transcreve_tab_audio()
-    with abas[2]:
         transcreve_tab_video()
+    with abas[2]:
+        transcreve_tab_audio()
     with abas[3]:
         transcreve_tab_texto()
 
