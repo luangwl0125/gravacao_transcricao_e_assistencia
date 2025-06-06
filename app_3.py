@@ -4,14 +4,19 @@ sys.modules['pyaudioop'] = audioop
 
 from pathlib import Path
 from datetime import datetime
+import time
 import queue
+import tempfile
 import os
 
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 import openai
+import pydub
+from moviepy.video.io.VideoFileClip import VideoFileClip
 from dotenv import load_dotenv, find_dotenv
+from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
 
@@ -20,12 +25,19 @@ PASTA_TEMP.mkdir(exist_ok=True)
 PASTA_TRANSCRICOES = Path(__file__).parent / 'TRANSCRICOES'
 PASTA_TRANSCRICOES.mkdir(exist_ok=True)
 
+ARQUIVO_AUDIO_TEMP = PASTA_TEMP / 'audio.wav'
+ARQUIVO_VIDEO_TEMP = PASTA_TEMP / 'video.mp4'
 ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.wav'
 
-@st.cache_resource
+client = openai.OpenAI()
+local_model = None
+
 def get_local_whisper():
-    import whisper
-    return whisper.load_model("base")
+    global local_model
+    if local_model is None:
+        import whisper
+        local_model = whisper.load_model("base")
+    return local_model
 
 # Prompts
 PROMPT_PSICOLOGICO = ''' 
@@ -166,81 +178,94 @@ def st_webrtc_audio_recorder():
 
     return audio_bytes
 
-def transcreve_upload(tipo, extensoes, formato_visualizacao):
-    arquivo = st.file_uploader(f"Envie um arquivo de {tipo}", type=extensoes)
-    if arquivo:
-        caminho_temp = PASTA_TEMP / arquivo.name
-        with open(caminho_temp, "wb") as f:
-            f.write(arquivo.getbuffer())
-
-        if tipo in ["áudio", "vídeo"]:
-            st.audio(str(caminho_temp), format=formato_visualizacao) if tipo == "áudio" else st.video(str(caminho_temp))
-
-        try:
-            resultado = get_local_whisper().transcribe(str(caminho_temp))
-            texto = resultado["text"]
-            st.subheader("Transcrição")
-            st.text_area("Texto transcrito:", texto, height=300)
-            salvar_transcricao(texto)
-        except Exception as e:
-            st.error(f"Erro ao transcrever {tipo}: {e}")
-
-def transcreve_texto():
-    arquivo = st.file_uploader("Envie um arquivo de texto (.txt, .docx)", type=["txt", "docx"])
-    if arquivo:
-        try:
-            if arquivo.type == "text/plain":
-                conteudo = arquivo.read().decode("utf-8")
-            else:
-                from docx import Document
-                doc = Document(arquivo)
-                conteudo = "\n".join([p.text for p in doc.paragraphs])
-            st.subheader("Conteúdo do Texto")
-            st.text_area("Texto extraído:", conteudo, height=300)
-            salvar_transcricao(conteudo)
-        except Exception as e:
-            st.error(f"Erro ao ler texto: {e}")
-
-def transcreve_mic():
+def transcreve_tab_mic():
+    st.subheader("Gravador de Microfone")
     st.markdown("Pressione o botão abaixo para iniciar a gravação de voz.")
+
     audio_buffer = st_webrtc_audio_recorder()
+
     if audio_buffer:
         st.audio(audio_buffer, format="audio/wav")
         with open(ARQUIVO_MIC_TEMP, "wb") as f:
             f.write(audio_buffer)
 
-        resultado = get_local_whisper().transcribe(str(ARQUIVO_MIC_TEMP))
-        texto = resultado["text"]
-        st.subheader("Transcrição")
-        st.text_area("Texto transcrito:", texto, height=300)
-        salvar_transcricao(texto)
+        modelo = get_local_whisper()
+        resultado = modelo.transcribe(str(ARQUIVO_MIC_TEMP))
 
-def salvar_transcricao(texto):
-    if st.button("Salvar transcrição"):
-        agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        tipo = st.session_state.get('tipo_prompt', 'generico').lower().replace(' ', '_')
-        caminho = PASTA_TRANSCRICOES / f"transcricao_{tipo}_{agora}.txt"
-        caminho.write_text(texto, encoding='utf-8')
-        st.success(f"Transcrição salva em: {caminho}")
+        st.subheader("Transcrição")
+        st.text_area("Texto transcrito:", resultado["text"], height=300)
+
+def transcreve_tab_video():
+    st.subheader("Envio de Arquivo de Vídeo")
+    arquivo_video = st.file_uploader("Envie um vídeo (.mp4, .mov)", type=["mp4", "mov"])
+    if arquivo_video:
+        caminho_temp = PASTA_TEMP / arquivo_video.name
+        with open(caminho_temp, "wb") as f:
+            f.write(arquivo_video.getbuffer())
+        st.video(str(caminho_temp))
+        try:
+            resultado = get_local_whisper().transcribe(str(caminho_temp))
+            st.subheader("Transcrição")
+            st.text_area("Texto transcrito:", resultado["text"], height=300)
+        except Exception as e:
+            st.error(f"Erro ao transcrever vídeo: {e}")
+
+def transcreve_tab_audio():
+    st.subheader("Envio de Arquivo de Áudio")
+    arquivo_audio = st.file_uploader("Envie um áudio (.wav, .mp3)", type=["wav", "mp3"])
+    if arquivo_audio:
+        caminho_temp = PASTA_TEMP / arquivo_audio.name
+        with open(caminho_temp, "wb") as f:
+            f.write(arquivo_audio.getbuffer())
+        st.audio(str(caminho_temp), format="audio/wav")
+        try:
+            resultado = get_local_whisper().transcribe(str(caminho_temp))
+            st.subheader("Transcrição")
+            st.text_area("Texto transcrito:", resultado["text"], height=300)
+        except Exception as e:
+            st.error(f"Erro ao transcrever áudio: {e}")
+
+def transcreve_tab_texto():
+    st.subheader("Envio de Arquivo de Texto")
+    arquivo_texto = st.file_uploader("Envie um arquivo de texto (.txt, .docx)", type=["txt", "docx"])
+    if arquivo_texto:
+        try:
+            if arquivo_texto.type == "text/plain":
+                conteudo = arquivo_texto.read().decode("utf-8")
+            else:
+                from docx import Document
+                doc = Document(arquivo_texto)
+                conteudo = "\n".join([p.text for p in doc.paragraphs])
+            st.subheader("Conteúdo do Texto")
+            st.text_area("Texto extraído:", conteudo, height=300)
+        except Exception as e:
+            st.error(f"Erro ao ler texto: {e}")
 
 def main():
     st.sidebar.title("Selecione o tipo de atendimento")
-    tipo_prompt = st.sidebar.radio("Tipo de Análise:", list(PROMPTS.keys()))
-    st.session_state['tipo_prompt'] = tipo_prompt
-    st.session_state['prompt_escolhido'] = PROMPTS[tipo_prompt]
+    tipo_prompt = st.sidebar.radio("Tipo de Análise:", ["Psicológico", "Jurídico", "Serviço Social"])
+    if tipo_prompt == "Psicológico":
+        prompt_escolhido = PROMPT_PSICOLOGICO
+    elif tipo_prompt == "Jurídico":
+        prompt_escolhido = PROMPT_JURIDICO
+    else:
+        prompt_escolhido = PROMPT_SERVICO_SOCIAL
+
+    st.session_state['prompt_escolhido'] = prompt_escolhido
 
     st.header('Assistente de Organização')
     st.markdown('Gravação, Transcrição e Organização.')
+    st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
 
     abas = st.tabs(['Microfone', 'Vídeo', 'Áudio', 'Texto'])
     with abas[0]:
-        transcreve_mic()
+        transcreve_tab_mic()
     with abas[1]:
-        transcreve_upload("vídeo", ["mp4", "mov"], "video/mp4")
+        transcreve_tab_video()
     with abas[2]:
-        transcreve_upload("áudio", ["wav", "mp3"], "audio/wav")
+        transcreve_tab_audio()
     with abas[3]:
-        transcreve_texto()
+        transcreve_tab_texto()
 
 if __name__ == '__main__':
     main()
