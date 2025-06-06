@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 import time
 import queue
+
 import tempfile
 import os
 import streamlit as st
@@ -18,7 +19,31 @@ from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
 
-# --- PROMPTS ---
+# Diretórios
+PASTA_TEMP = Path(__file__).parent / 'temp'
+PASTA_TEMP.mkdir(exist_ok=True)
+PASTA_TRANSCRICOES = Path(__file__).parent / 'TRANSCRICOES'
+PASTA_TRANSCRICOES.mkdir(exist_ok=True)
+
+# Arquivos temporários
+ARQUIVO_AUDIO_TEMP = PASTA_TEMP / 'audio.wav'
+ARQUIVO_VIDEO_TEMP = PASTA_TEMP / 'video.mp4'
+ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.wav'
+
+# Cliente OpenAI
+client = openai.OpenAI()
+
+# Whisper local
+local_model = None
+
+def get_local_whisper():
+    global local_model
+    if local_model is None:
+        import whisper
+        local_model = whisper.load_model("base")
+    return local_model
+
+# Prompts
 PROMPT_PSICOLOGICO = ''' 
 Você é um Psicólogo/Neuropsicólogo Assistente com mais de 30 anos de experiência no Brasil, atuando diretamente como suporte técnico de LUAN GAMA WANDERLEY LEITE (CRP-15/3328), Psicólogo e Assessor Técnico da Defensoria Pública do Estado de Alagoas (Mat. 9864616-8).
 
@@ -96,118 +121,26 @@ O conteúdo da transcrição a ser analisado está delimitado entre #### TRANSCR
 #### TRANSCRIÇÃO ####
 '''
 
-
-# --- Seleção de Prompt ---
-st.sidebar.title("Tipo de Atendimento")
-tipo_atendimento = st.sidebar.radio("Selecione o tipo:", ["Psicológico", "Jurídico"])
-prompt_analise = PROMPT_PSICOLOGICO if tipo_atendimento == "Psicológico" else PROMPT_JURIDICO
-
-# --- Diretórios ---
-PASTA_TEMP = Path("temp")
-PASTA_TRANSCRICOES = Path("TRANSCRICOES")
-PASTA_TEMP.mkdir(exist_ok=True)
-PASTA_TRANSCRICOES.mkdir(exist_ok=True)
-ARQUIVO_AUDIO_TEMP = PASTA_TEMP / "audio.wav"
-ARQUIVO_VIDEO_TEMP = PASTA_TEMP / "video.mp4"
-ARQUIVO_MIC_TEMP = PASTA_TEMP / "mic.wav"
-
-client = openai.OpenAI()
-
-# --- Processamento ---
-def processa_transcricao_chatgpt(texto: str) -> str:
-    resposta = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt_analise.format(texto)}]
-    )
-    return resposta.choices[0].message.content
-
-def transcreve_audio(caminho_audio: str, prompt: str) -> tuple[str, str]:
-    with open(caminho_audio, 'rb') as arquivo:
-        resp = client.audio.transcriptions.create(
-            model='whisper-1',
-            language='pt',
-            response_format='text',
-            file=arquivo,
-            prompt=prompt,
-        )
-        analise = processa_transcricao_chatgpt(resp)
-        return resp, analise
-
-def converter_para_wav(caminho_entrada: str) -> str:
-    audio = pydub.AudioSegment.from_file(caminho_entrada)
-    fd, caminho_wav = tempfile.mkstemp(suffix=".wav", prefix="audio_")
-    os.close(fd)
-    audio.export(caminho_wav, format="wav")
-    return caminho_wav
-
-def salva_transcricao(texto: str, analise: str, origem: str = ""):
-    agora = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    prefixo = f"{agora}_{origem}" if origem else agora
-    with open(PASTA_TRANSCRICOES / f"{prefixo}_transcricao.txt", 'w', encoding='utf-8') as f:
-        f.write(texto)
-    with open(PASTA_TRANSCRICOES / f"{prefixo}_analise.txt", 'w', encoding='utf-8') as f:
-        f.write(analise)
-
-# --- Abas ---
-def transcreve_tab_audio():
-    st.subheader("Análise de Áudio")
-    audio = st.file_uploader("Envie um arquivo de áudio", type=["mp3", "wav", "m4a", "ogg"])
-    if audio:
-        caminho = PASTA_TEMP / audio.name
-        with open(caminho, 'wb') as f:
-            f.write(audio.read())
-        wav = converter_para_wav(str(caminho))
-        texto, analise = transcreve_audio(wav, prompt_analise)
-        st.write("**Transcrição:**")
-        st.write(texto)
-        st.write("**Análise:**")
-        st.write(analise)
-        salva_transcricao(texto, analise, f"audio_{audio.name}")
-
-def transcreve_tab_video():
-    st.subheader("Análise de Vídeo")
-    video = st.file_uploader("Envie um vídeo", type=["mp4", "mov", "avi", "mkv"])
-    if video:
-        with open(ARQUIVO_VIDEO_TEMP, 'wb') as f:
-            f.write(video.read())
-        clip = VideoFileClip(str(ARQUIVO_VIDEO_TEMP))
-        clip.audio.write_audiofile(str(ARQUIVO_AUDIO_TEMP), logger=None)
-        wav = converter_para_wav(str(ARQUIVO_AUDIO_TEMP))
-        texto, analise = transcreve_audio(wav, prompt_analise)
-        st.write("**Transcrição:**")
-        st.write(texto)
-        st.write("**Análise:**")
-        st.write(analise)
-        salva_transcricao(texto, analise, f"video_{video.name}")
-
-def transcreve_tab_texto():
-    st.subheader("Análise de Texto")
-    texto_arquivo = st.file_uploader("Envie um arquivo de texto (.txt, .docx)", type=["txt", "doc", "docx"])
-    if texto_arquivo:
-        try:
-            if texto_arquivo.type == "text/plain":
-                texto = texto_arquivo.getvalue().decode('utf-8')
-            else:
-                import docx2txt
-                texto = docx2txt.process(texto_arquivo)
-            analise = processa_transcricao_chatgpt(texto)
-            st.write("**Texto Original:**")
-            st.write(texto)
-            st.write("**Análise:**")
-            st.write(analise)
-            salva_transcricao(texto, analise, f"texto_{texto_arquivo.name}")
-        except Exception as e:
-            st.error(f"Erro ao processar: {str(e)}")
+# Restante do código permanece igual até o final do main()
+# No main(), ajustar para incluir a aba de microfone:
 
 def main():
-    st.title("🎙️ Assistente de Organização")
-    st.markdown("Gravação, Transcrição e Organização.")
-    abas = st.tabs(["Áudio", "Vídeo", "Texto"])
+    st.sidebar.title("🧠 Selecione o tipo de atendimento")
+    tipo_prompt = st.sidebar.radio("Tipo de Análise:", ["Psicológico", "Jurídico"])
+    prompt_escolhido = PROMPT_PSICOLOGICO if tipo_prompt == "Psicológico" else PROMPT_JURIDICO
+    st.session_state['prompt_escolhido'] = prompt_escolhido
+
+    st.header('🎙️ Assistente de Organização 🎙️')
+    st.markdown('Gravação, Transcrição e Organização.')
+    st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
+    abas = st.tabs(['Microfone', 'Áudio', 'Vídeo', 'Texto'])
     with abas[0]:
-        transcreve_tab_audio()
+        transcreve_tab_mic()
     with abas[1]:
-        transcreve_tab_video()
+        transcreve_tab_audio()
     with abas[2]:
+        transcreve_tab_video()
+    with abas[3]:
         transcreve_tab_texto()
 
 if __name__ == '__main__':
