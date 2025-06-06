@@ -150,10 +150,6 @@ def adiciona_chunck_de_audio(frames, chunk_audio):
         chunk_audio += seg
     return chunk_audio
 
-# Escolha do tipo de atendimento
-tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
-prompt_mic = PROMPTS[tipo_atendimento]
-
 def salva_transcricao(texto: str, analise: str, origem: str = ""):
     """Salva a transcrição original e a análise em arquivos separados"""
     agora = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -326,6 +322,10 @@ def transcreve_tab_texto():
             salva_transcricao(texto, analise, f'texto_{arquivo_texto.name}')
         except Exception as e:
             st.error(f"Erro ao processar o arquivo: {str(e)}")
+
+# Escolha do tipo de atendimento
+tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+prompt_mic = PROMPTS[tipo_atendimento]
 
 # Função principal
 def main():
