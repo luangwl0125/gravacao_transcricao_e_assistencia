@@ -146,7 +146,7 @@ def processa_transcricao_chatgpt(texto: str) -> str:
     resposta = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "user", "content": PROMPT_ANALISE.format(texto)}
+            {"role": "user", "content": PROMPT_JURIDICO.format(texto)}
         ]
     )
     return resposta.choices[0].message.content
