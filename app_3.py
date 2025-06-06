@@ -1,17 +1,19 @@
-import sys
-import audioop
+import sys, audioop
 sys.modules['pyaudioop'] = audioop
 
 from pathlib import Path
 from datetime import datetime
+import time
 import queue
+import tempfile
 import os
-
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
-
 import openai
+import pydub
+from moviepy.video.io.VideoFileClip import VideoFileClip
 from dotenv import load_dotenv, find_dotenv
+from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
 
@@ -20,7 +22,11 @@ PASTA_TEMP.mkdir(exist_ok=True)
 PASTA_TRANSCRICOES = Path(__file__).parent / 'TRANSCRICOES'
 PASTA_TRANSCRICOES.mkdir(exist_ok=True)
 
+ARQUIVO_AUDIO_TEMP = PASTA_TEMP / 'audio.wav'
+ARQUIVO_VIDEO_TEMP = PASTA_TEMP / 'video.mp4'
 ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.wav'
+
+client = openai.OpenAI()
 
 @st.cache_resource
 def get_local_whisper():
@@ -154,99 +160,261 @@ PROMPTS = {
     "Serviço Social": PROMPT_SERVICO_SOCIAL
 }
 
-def st_webrtc_audio_recorder():
-    webrtc_ctx = webrtc_streamer(
-        key="mic",
-        mode=WebRtcMode.SENDRECV,
-        media_stream_constraints={"audio": True, "video": False},
-        async_processing=True,
+def transcreve_tab_mic():
+    tipo_atendimento = st.radio('Tipo de Atendimento:', ['Psicológico', 'Serviço Social', 'Jurídico'], horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
+    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
+
+@handle_openai_error
+def processa_transcricao_chatgpt(texto: str) -> str:
+    """Processa o texto usando o ChatGPT para gerar uma análise estruturada"""
+    resposta = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "user", "content": PROMPT_ANALISE.format(texto)}
+        ]
+    )
+    return resposta.choices[0].message.content
+
+# Converte qualquer formato suportado para WAV
+def converter_para_wav(caminho_entrada: str) -> str:
+    audio = pydub.AudioSegment.from_file(caminho_entrada)
+    fd, caminho_wav = tempfile.mkstemp(suffix=".wav", prefix="audio_")
+    os.close(fd)
+    audio.export(caminho_wav, format="wav")
+    return caminho_wav
+
+@handle_openai_error
+def transcreve_audio(caminho_audio: str, prompt: str) -> tuple[str, str]:
+    with open(caminho_audio, 'rb') as arquivo:
+        try:
+            resp = client.audio.transcriptions.create(
+                model='whisper-1',
+                language='pt',
+                response_format='text',
+                file=arquivo,
+                prompt=prompt,
+            )
+            analise = processa_transcricao_chatgpt(resp)
+            return resp, analise
+        except Exception as e:
+            st.warning(f"Erro na API OpenAI: {str(e)}. Usando serviço local.")
+            return use_fallback_service(caminho_audio, prompt)
+
+# Estado inicial para transcrição do microfone
+if 'transcricao_mic' not in st.session_state:
+    st.session_state['transcricao_mic'] = ''
+if 'analise_mic' not in st.session_state:
+    st.session_state['analise_mic'] = ''
+if 'gravando_audio' not in st.session_state:
+    st.session_state['gravando_audio'] = False
+if 'audio_completo' not in st.session_state:
+    st.session_state['audio_completo'] = pydub.AudioSegment.empty()
+
+# Cache para configuração de ICE servers
+@st.cache_data
+def get_ice_servers():
+    return [{'urls': ['stun:stun.l.google.com:19302']}]
+
+# Concatena frames em AudioSegment
+def adiciona_chunck_de_audio(frames, chunk_audio):
+    for frame in frames:
+        seg = pydub.AudioSegment(
+            data=frame.to_ndarray().tobytes(),
+            sample_width=frame.format.bytes,
+            frame_rate=frame.sample_rate,
+            channels=len(frame.layout.channels)
+        )
+        chunk_audio += seg
+    return chunk_audio
+
+def salva_transcricao(texto: str, analise: str, origem: str = ""):
+    """Salva a transcrição original e a análise em arquivos separados"""
+    agora = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    prefixo = f"{agora}_{origem}" if origem else agora
+    
+    # Salva transcrição original
+    arquivo_transcricao = PASTA_TRANSCRICOES / f"{prefixo}_transcricao.txt"
+    with open(arquivo_transcricao, 'w', encoding='utf-8') as f:
+        f.write(texto)
+    
+    # Salva análise estruturada
+    arquivo_analise = PASTA_TRANSCRICOES / f"{prefixo}_analise.txt"
+    with open(arquivo_analise, 'w', encoding='utf-8') as f:
+        f.write(analise)
+    
+    return arquivo_transcricao, arquivo_analise
+
+# Aba Microfone
+def transcreve_tab_mic():
+    prompt_mic = st.text_input('Prompt (opcional)', key='input_mic')
+    
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button('🔴 Gravar Áudio' if not st.session_state['gravando_audio'] else '⏹️ Parar Gravação'):
+            st.session_state['gravando_audio'] = not st.session_state['gravando_audio']
+            if not st.session_state['gravando_audio'] and len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
+    
+    ctx = webrtc_streamer(
+        key='mic', mode=WebRtcMode.SENDONLY,
+        audio_receiver_size=1024,
+        media_stream_constraints={'video': False, 'audio': True},
+        rtc_configuration={"iceServers": get_ice_servers()}
     )
 
-    audio_bytes = None
-    if webrtc_ctx.audio_receiver:
+    # Quando parar a gravação
+    if not ctx.state.playing:
+        # Reseta estado de gravação de áudio
+        if st.session_state['gravando_audio']:
+            st.session_state['gravando_audio'] = False
+            if len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
+        
+        if st.session_state['transcricao_mic']:  # Se há transcrição
+            if not st.session_state['analise_mic']:  # Se ainda não gerou análise
+                st.write("Gerando análise...")
+                st.session_state['analise_mic'] = processa_transcricao_chatgpt(st.session_state['transcricao_mic'])
+            
+            st.write("**Transcrição:**")
+            st.write(st.session_state['transcricao_mic'])
+            st.write("**Análise:**")
+            st.write(st.session_state['analise_mic'])
+            
+            salva_transcricao(
+                st.session_state['transcricao_mic'],
+                st.session_state['analise_mic'],
+                'microfone'
+            )
+        return
+
+    status_col1, status_col2 = st.columns(2)
+    with status_col1:
+        st.markdown('**🎙️ Transcrevendo...**')
+    with status_col2:
+        if st.session_state['gravando_audio']:
+            st.markdown('**🔴 Gravando áudio...**')
+
+    placeholder = st.empty()
+    chunk_audio = pydub.AudioSegment.empty()
+    ultimo = time.time()
+    st.session_state['transcricao_mic'] = ''
+    st.session_state['analise_mic'] = ''
+
+    while ctx.audio_receiver:
         try:
-            frames = webrtc_ctx.audio_receiver.get_frames(timeout=1)
-            audio_bytes = b"".join([f.to_ndarray().tobytes() for f in frames])
+            frames = ctx.audio_receiver.get_frames(timeout=1)
         except queue.Empty:
-            pass
+            time.sleep(0.1)
+            continue
+        
+        # Processa os frames de áudio
+        chunk_atual = pydub.AudioSegment.empty()
+        chunk_atual = adiciona_chunck_de_audio(frames, chunk_atual)
+        chunk_audio += chunk_atual
+        
+        # Se estiver gravando, adiciona ao áudio completo
+        if st.session_state['gravando_audio']:
+            st.session_state['audio_completo'] += chunk_atual
+        
+        agora = time.time()
+        # A cada 10s, transcreve
+        if len(chunk_audio) > 0 and agora - ultimo > 10:
+            ultimo = agora
+            # exporta temporariamente para transcrição
+            chunk_audio.export(ARQUIVO_MIC_TEMP, format='wav')
+            texto, _ = transcreve_audio(str(ARQUIVO_MIC_TEMP), prompt_mic)
+            st.session_state['transcricao_mic'] += texto
+            placeholder.write(st.session_state['transcricao_mic'])
+            chunk_audio = pydub.AudioSegment.empty()
 
-    return audio_bytes
+# Extrai áudio de vídeo
+def _salva_audio_do_video(file_bytes):
+    with open(ARQUIVO_VIDEO_TEMP, 'wb') as f:
+        f.write(file_bytes.read())
+    clip = VideoFileClip(str(ARQUIVO_VIDEO_TEMP))
+    clip.audio.write_audiofile(str(ARQUIVO_AUDIO_TEMP), logger=None)
 
-def transcreve_upload(tipo, extensoes, formato_visualizacao):
-    arquivo = st.file_uploader(f"Envie um arquivo de {tipo}", type=extensoes)
-    if arquivo:
-        caminho_temp = PASTA_TEMP / arquivo.name
-        with open(caminho_temp, "wb") as f:
-            f.write(arquivo.getbuffer())
+# Aba Vídeo
+def transcreve_tab_video():
+    prompt = st.text_input('Prompt (opcional)', key='input_video')
+    video = st.file_uploader('Adicione um vídeo', type=['mp4','mov','avi','mkv','webm'])
+    if video:
+        # salva vídeo e extrai áudio WAV
+        _salva_audio_do_video(video)
+        wav = converter_para_wav(str(ARQUIVO_AUDIO_TEMP))
+        texto, analise = transcreve_audio(wav, prompt)
+        st.write("**Transcrição:**")
+        st.write(texto)
+        st.write("**Análise:**")
+        st.write(analise)
+        # Salva os arquivos
+        salva_transcricao(texto, analise, f'video_{video.name}')
 
-        if tipo in ["áudio", "vídeo"]:
-            st.audio(str(caminho_temp), format=formato_visualizacao) if tipo == "áudio" else st.video(str(caminho_temp))
+# Aba Áudio
+def transcreve_tab_audio():
+    prompt = st.text_input('Prompt (opcional)', key='input_audio')
+    audio = st.file_uploader('Adicione um áudio', type=['opus','mp4','mpeg','wav','mp3','m4a'])
+    if audio:
+        # salva e converte para WAV
+        caminho = PASTA_TEMP / audio.name
+        with open(caminho, 'wb') as f:
+            f.write(audio.read())
+        wav = converter_para_wav(str(caminho))
+        texto, analise = transcreve_audio(wav, prompt)
+        st.write("**Transcrição:**")
+        st.write(texto)
+        st.write("**Análise:**")
+        st.write(analise)
+        # Salva os arquivos
+        salva_transcricao(texto, analise, f'audio_{audio.name}')
 
+# Aba Texto
+def transcreve_tab_texto():
+    st.write("Envie um arquivo de texto com a transcrição para análise")
+    arquivo_texto = st.file_uploader('Adicione um arquivo de texto', type=['txt', 'doc', 'docx'])
+    if arquivo_texto:
         try:
-            resultado = get_local_whisper().transcribe(str(caminho_temp))
-            texto = resultado["text"]
-            st.subheader("Transcrição")
-            st.text_area("Texto transcrito:", texto, height=300)
-            salvar_transcricao(texto)
-        except Exception as e:
-            st.error(f"Erro ao transcrever {tipo}: {e}")
-
-def transcreve_texto():
-    arquivo = st.file_uploader("Envie um arquivo de texto (.txt, .docx)", type=["txt", "docx"])
-    if arquivo:
-        try:
-            if arquivo.type == "text/plain":
-                conteudo = arquivo.read().decode("utf-8")
+            if arquivo_texto.type == 'text/plain':
+                # Para arquivos .txt
+                texto = arquivo_texto.getvalue().decode('utf-8')
             else:
-                from docx import Document
-                doc = Document(arquivo)
-                conteudo = "\n".join([p.text for p in doc.paragraphs])
-            st.subheader("Conteúdo do Texto")
-            st.text_area("Texto extraído:", conteudo, height=300)
-            salvar_transcricao(conteudo)
+                # Para arquivos Word (.doc, .docx)
+                import docx2txt
+                texto = docx2txt.process(arquivo_texto)
+            
+            analise = processa_transcricao_chatgpt(texto)
+            st.write("**Texto Original:**")
+            st.write(texto)
+            st.write("**Análise:**")
+            st.write(analise)
+            # Salva os arquivos
+            salva_transcricao(texto, analise, f'texto_{arquivo_texto.name}')
         except Exception as e:
-            st.error(f"Erro ao ler texto: {e}")
+            st.error(f"Erro ao processar o arquivo: {str(e)}")
 
-def transcreve_mic():
-    st.markdown("Pressione o botão abaixo para iniciar a gravação de voz.")
-    audio_buffer = st_webrtc_audio_recorder()
-    if audio_buffer:
-        st.audio(audio_buffer, format="audio/wav")
-        with open(ARQUIVO_MIC_TEMP, "wb") as f:
-            f.write(audio_buffer)
-
-        resultado = get_local_whisper().transcribe(str(ARQUIVO_MIC_TEMP))
-        texto = resultado["text"]
-        st.subheader("Transcrição")
-        st.text_area("Texto transcrito:", texto, height=300)
-        salvar_transcricao(texto)
-
-def salvar_transcricao(texto):
-    if st.button("Salvar transcrição"):
-        agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        tipo = st.session_state.get('tipo_prompt', 'generico').lower().replace(' ', '_')
-        caminho = PASTA_TRANSCRICOES / f"transcricao_{tipo}_{agora}.txt"
-        caminho.write_text(texto, encoding='utf-8')
-        st.success(f"Transcrição salva em: {caminho}")
-
+# Função principal
 def main():
-    st.sidebar.title("Selecione o tipo de atendimento")
-    tipo_prompt = st.sidebar.radio("Tipo de Análise:", list(PROMPTS.keys()))
-    st.session_state['tipo_prompt'] = tipo_prompt
-    st.session_state['prompt_escolhido'] = PROMPTS[tipo_prompt]
-
-    st.header('Assistente de Organização')
+    st.header('🎙️ Assistente de Organização 🎙️')
     st.markdown('Gravação, Transcrição e Organização.')
-
+    st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
     abas = st.tabs(['Microfone', 'Vídeo', 'Áudio', 'Texto'])
     with abas[0]:
-        transcreve_mic()
+        transcreve_tab_mic()
     with abas[1]:
-        transcreve_upload("vídeo", ["mp4", "mov"], "video/mp4")
+        transcreve_tab_video()
     with abas[2]:
-        transcreve_upload("áudio", ["wav", "mp3"], "audio/wav")
+        transcreve_tab_audio()
     with abas[3]:
-        transcreve_texto()
+        transcreve_tab_texto()
 
 if __name__ == '__main__':
     main()
