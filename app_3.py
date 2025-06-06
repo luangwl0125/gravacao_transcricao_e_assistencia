@@ -208,7 +208,9 @@ PROMPTS = {
 def processa_transcricao_chatgpt(texto: str) -> str:
     resposta = client.chat.completions.create(
         model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": texto}]
+        messages=[
+            {"role": "user", "content": PROMPT_PSICOLOGICO.format(texto)}
+        ]
     )
     return resposta.choices[0].message.content
 
@@ -230,20 +232,18 @@ def transcreve_audio(caminho_audio: str, prompt: str) -> tuple[str, str]:
                 file=arquivo,
                 prompt=prompt,
             )
-            analise = processa_transcricao_chatgpt(prompt.format(resp))
+            analise = processa_transcricao_chatgpt(resp)
             return resp, analise
         except Exception as e:
             st.warning(f"Erro na API OpenAI: {str(e)}. Usando serviço local.")
             return use_fallback_service(caminho_audio, prompt)
 
-# Estado inicial
-for key in ['transcricao_mic', 'analise_mic', 'gravando_audio', 'tipo_prompt', 'prompt_escolhido']:
-    if key not in st.session_state:
-        if key == 'gravando_audio':
-            st.session_state[key] = False
-        else:
-            st.session_state[key] = '' if 'transcricao' in key or 'analise' in key else None
-
+if 'transcricao_mic' not in st.session_state:
+    st.session_state['transcricao_mic'] = ''
+if 'analise_mic' not in st.session_state:
+    st.session_state['analise_mic'] = ''
+if 'gravando_audio' not in st.session_state:
+    st.session_state['gravando_audio'] = False
 if 'audio_completo' not in st.session_state:
     st.session_state['audio_completo'] = pydub.AudioSegment.empty()
 
@@ -269,41 +269,99 @@ def salva_transcricao(texto: str, analise: str, origem: str = ""):
         f.write(texto)
     with open(PASTA_TRANSCRICOES / f"{prefixo}_analise.txt", 'w', encoding='utf-8') as f:
         f.write(analise)
-    return prefixo
+    return
 
-def aba_transcricao(upload_func, origem):
-    tipo_prompt = st.radio(f'Selecione o tipo de atendimento ({origem}):', list(PROMPTS.keys()), key=f'tipo_{origem}')
-    prompt_escolhido = PROMPTS[tipo_prompt]
-    st.session_state['tipo_prompt'] = tipo_prompt
-    st.session_state['prompt_escolhido'] = prompt_escolhido
-    st.text_area("Prompt Selecionado:", prompt_escolhido[:800] + '...', height=300)
-    upload_func(prompt_escolhido)
+def transcreve_tab_mic():
+    tipo_atendimento = st.radio('Tipo de Atendimento:', list(PROMPTS.keys()), horizontal=True)
+    prompt_mic = PROMPTS[tipo_atendimento]
+    st.text_area("Prompt Selecionado:", prompt_mic[:800] + '...', height=300)
 
-def transcreve_tab_mic(prompt_mic):
-    ... # manter lógica de microfone usando prompt_mic
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button('🔴 Gravar Áudio' if not st.session_state['gravando_audio'] else '⏹️ Parar Gravação'):
+            st.session_state['gravando_audio'] = not st.session_state['gravando_audio']
+            if not st.session_state['gravando_audio'] and len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
 
-def transcreve_tab_video(prompt_video):
-    ... # lógica de upload e transcrição de vídeo com prompt_video
+    ctx = webrtc_streamer(
+        key='mic', mode=WebRtcMode.SENDONLY,
+        audio_receiver_size=1024,
+        media_stream_constraints={'video': False, 'audio': True},
+        rtc_configuration={"iceServers": get_ice_servers()}
+    )
 
-def transcreve_tab_audio(prompt_audio):
-    ... # lógica de upload e transcrição de áudio com prompt_audio
+    if not ctx.state.playing:
+        if st.session_state['gravando_audio']:
+            st.session_state['gravando_audio'] = False
+            if len(st.session_state['audio_completo']) > 0:
+                st.session_state['audio_completo'].export(
+                    PASTA_TRANSCRICOES / f"audio_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.wav",
+                    format='wav'
+                )
+                st.session_state['audio_completo'] = pydub.AudioSegment.empty()
 
-def transcreve_tab_texto(prompt_texto):
-    ... # lógica de upload e transcrição de texto com prompt_texto
+        if st.session_state['transcricao_mic']:
+            if not st.session_state['analise_mic']:
+                st.write("Gerando análise...")
+                st.session_state['analise_mic'] = processa_transcricao_chatgpt(st.session_state['transcricao_mic'])
+            st.write("**Transcrição:**")
+            st.write(st.session_state['transcricao_mic'])
+            st.write("**Análise:**")
+            st.write(st.session_state['analise_mic'])
+            salva_transcricao(
+                st.session_state['transcricao_mic'],
+                st.session_state['analise_mic'],
+                'microfone'
+            )
+        return
+
+    status_col1, status_col2 = st.columns(2)
+    with status_col1:
+        st.markdown('**🎙️ Transcrevendo...**')
+    with status_col2:
+        if st.session_state['gravando_audio']:
+            st.markdown('**🔴 Gravando áudio...**')
+
+    placeholder = st.empty()
+    chunk_audio = pydub.AudioSegment.empty()
+    ultimo = time.time()
+    st.session_state['transcricao_mic'] = ''
+    st.session_state['analise_mic'] = ''
+
+    while ctx.audio_receiver:
+        try:
+            frames = ctx.audio_receiver.get_frames(timeout=1)
+        except queue.Empty:
+            time.sleep(0.1)
+            continue
+
+        chunk_atual = pydub.AudioSegment.empty()
+        chunk_atual = adiciona_chunck_de_audio(frames, chunk_atual)
+        chunk_audio += chunk_atual
+
+        if st.session_state['gravando_audio']:
+            st.session_state['audio_completo'] += chunk_atual
+
+        agora = time.time()
+        if len(chunk_audio) > 0 and agora - ultimo > 10:
+            ultimo = agora
+            chunk_audio.export(ARQUIVO_MIC_TEMP, format='wav')
+            texto, _ = transcreve_audio(str(ARQUIVO_MIC_TEMP), prompt_mic)
+            st.session_state['transcricao_mic'] += texto
+            placeholder.write(st.session_state['transcricao_mic'])
+            chunk_audio = pydub.AudioSegment.empty()
 
 def main():
     st.header('🎙️ Assistente de Organização 🎙️')
     st.markdown('Gravação, Transcrição e Organização.')
+    st.markdown('Reuniões, Palestras, Atendimentos e Outros.')
     abas = st.tabs(['Microfone', 'Vídeo', 'Áudio', 'Texto'])
     with abas[0]:
-        aba_transcricao(transcreve_tab_mic, 'mic')
-    with abas[1]:
-        aba_transcricao(transcreve_tab_video, 'video')
-    with abas[2]:
-        aba_transcricao(transcreve_tab_audio, 'audio')
-    with abas[3]:
-        aba_transcricao(transcreve_tab_texto, 'texto')
+        transcreve_tab_mic()
 
 if __name__ == '__main__':
     main()
-    
