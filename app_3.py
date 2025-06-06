@@ -19,23 +19,65 @@ from openai import RateLimitError
 
 _ = load_dotenv(find_dotenv())
 
+# Diretório temporário
 PASTA_TEMP = Path(__file__).parent / 'temp'
 PASTA_TEMP.mkdir(exist_ok=True)
+
+# Diretório de transcrições
 PASTA_TRANSCRICOES = Path(__file__).parent / 'TRANSCRICOES'
 PASTA_TRANSCRICOES.mkdir(exist_ok=True)
 
+# Arquivos temporários
 ARQUIVO_AUDIO_TEMP = PASTA_TEMP / 'audio.wav'
 ARQUIVO_VIDEO_TEMP = PASTA_TEMP / 'video.mp4'
 ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.wav'
 
+# Cliente OpenAI
 client = openai.OpenAI()
 
-@st.cache_resource
-def get_local_whisper():
-    import whisper
-    return whisper.load_model("base")
+# Modelo Whisper local para fallback
+local_model = None
 
-# Prompts
+def get_local_whisper():
+    global local_model
+    if local_model is None:
+        local_model = whisper.load_model("base")
+    return local_model
+
+# Configurações de retry
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # segundos
+
+def handle_openai_error(func):
+    def wrapper(*args, **kwargs):
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except RateLimitError as e:
+                if attempt == MAX_RETRIES - 1:  # Se for a última tentativa
+                    st.warning("OpenAI API rate limit atingido. Usando serviço local de fallback.")
+                    return use_fallback_service(*args, **kwargs)
+                else:
+                    time.sleep(RETRY_DELAY * (attempt + 1))  # Espera exponencial
+            except Exception as e:
+                st.error(f"Erro ao processar: {str(e)}")
+                return None
+    return wrapper
+
+def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
+    """Serviço de fallback usando Whisper local"""
+    try:
+        if caminho_audio:  # Para transcrição
+            model = get_local_whisper()
+            result = model.transcribe(caminho_audio, language="pt")
+            return result["text"], "Análise não disponível (usando serviço local)"
+        elif texto:  # Para análise
+            return texto, "Análise não disponível (usando serviço local)"
+    except Exception as e:
+        st.error(f"Erro no serviço de fallback: {str(e)}")
+        return "", ""
+
+# Prompt para o ChatGPT
 PROMPT_PSICOLOGICO = ''' 
 Você é um Psicólogo/Neuropsicólogo Assistente com mais de 30 anos de experiência no Brasil, atuando diretamente como suporte técnico de LUAN GAMA WANDERLEY LEITE (CRP-15/3328), Psicólogo e Assessor Técnico da Defensoria Pública do Estado de Alagoas (Mat. 9864616-8).
 
