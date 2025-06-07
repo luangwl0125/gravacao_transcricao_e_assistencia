@@ -315,9 +315,9 @@ def transcreve_tab_texto():
 
 # Função principal
 def main():
-    st.header('Núcleo de Atendimento ao Idoso - DPE/AL')
-    st.markdown('Transcrição e/ou Gravação e Organização de Atendimentos.')
-    st.markdown('Orientações e Recomendações Jurídicas')
+    st.header('ASSISTENTE DO NÚCLEO DO IDOSO DA DPE/AL')
+    st.markdown('ORGANIZAÇÃO AUTOMATIZADA DE ATENDIMENTOS') 
+    st.markdown('RESUMO E ELABORAÇÃO DE DOCUMENTOS')
     abas = st.tabs(['Microfone', 'Vídeo', 'Áudio', 'Texto'])
     with abas[0]:
         transcreve_tab_mic()
