@@ -48,21 +48,22 @@ def get_local_whisper():
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # segundos
 
-def handle_openai_error(func):
-    def wrapper(*args, **kwargs):
-        for attempt in range(MAX_RETRIES):
-            try:
-                return func(*args, **kwargs)
-            except RateLimitError as e:
-                if attempt == MAX_RETRIES - 1:  # Se for a última tentativa
-                    st.warning("OpenAI API rate limit atingido. Usando serviço local de fallback.")
-                    return use_fallback_service(*args, **kwargs)
-                else:
-                    time.sleep(RETRY_DELAY * (attempt + 1))  # Espera exponencial
-            except Exception as e:
-                st.error(f"Erro ao processar: {str(e)}")
-                return None
-    return wrapper
+@handle_openai_error
+def processa_transcricao_chatgpt(texto: str) -> str:
+    ASSISTANT_ID = "asst_3jtagu4F9ScCpBvVpxw7DI68"
+    thread = client.beta.threads.create()
+    client.beta.threads.messages.create(thread_id=thread.id, role="user", content=texto)
+    run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
+    while True:
+        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        if run_status.status in ['completed', 'failed', 'cancelled']:
+            break
+        time.sleep(1)
+    messages = client.beta.threads.messages.list(thread_id=thread.id)
+    for message in reversed(messages.data):
+        if message.role == "assistant":
+            return "\n\n".join([part.text.value for part in message.content])
+    return "Nenhuma resposta do assistente foi encontrada."
 
 def use_fallback_service(caminho_audio=None, prompt=None, texto=None):
     """Serviço de fallback usando Whisper local"""
